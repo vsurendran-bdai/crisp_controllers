@@ -22,7 +22,7 @@ option(CHECK_TIDY "Adds clang-tidy tests" OFF)
 
 option(ENABLE_NATIVE_OPTIMIZATION
   "Enable CPU-specific optimizations (-march=native)"
-  OFF
+  ON
 )
 
 # Default to release build
