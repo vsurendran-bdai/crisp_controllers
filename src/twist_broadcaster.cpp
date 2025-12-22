@@ -86,6 +86,8 @@ TwistBroadcaster::update(const rclcpp::Time &time,
             realtime_twist_publisher_->unlockAndPublish();
             
             publish_elapsed_ = publish_elapsed_ - publish_interval_;
+            // clamp to publish only 1 time even if missed multiple intervals
+            publish_elapsed_ = std::min(publish_elapsed_, publish_interval_);  
         }
     }
 
@@ -182,6 +184,8 @@ CallbackReturn TwistBroadcaster::on_configure(
 
 CallbackReturn TwistBroadcaster::on_activate(
     const rclcpp_lifecycle::State & /*previous_state*/) {
+    // reset publish time accumulation
+    publish_elapsed_ = rclcpp::Duration(0, 0); 
     return CallbackReturn::SUCCESS;
 }
 

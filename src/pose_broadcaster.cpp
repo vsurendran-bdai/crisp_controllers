@@ -82,6 +82,8 @@ PoseBroadcaster::update(const rclcpp::Time &time,
       realtime_pose_publisher_->unlockAndPublish();
       
       publish_elapsed_ = publish_elapsed_ - publish_interval_;
+      // clamp to publish only 1 time even if missed multiple intervals
+      publish_elapsed_ = std::min(publish_elapsed_, publish_interval_);      
     }
   }
 
@@ -177,6 +179,8 @@ CallbackReturn PoseBroadcaster::on_configure(
 
 CallbackReturn PoseBroadcaster::on_activate(
     const rclcpp_lifecycle::State & /*previous_state*/) {
+  // reset publish time accumulation
+  publish_elapsed_ = rclcpp::Duration(0, 0); 
   return CallbackReturn::SUCCESS;
 }
 
