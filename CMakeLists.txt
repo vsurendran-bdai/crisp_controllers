@@ -18,6 +18,12 @@ endif()
 # Enable precompiled headers
 option(USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
 
+# Enable optimizations
+add_compile_options(-O3 -march=native -DNDEBUG)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
