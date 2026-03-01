@@ -331,7 +331,7 @@ CallbackReturn CartesianController::on_configure(
   new_target_wrench_ = false;
 
   multiple_publishers_detected_ = false;
-  max_allowed_publishers_ = 1;
+  max_allowed_publishers_ = 2;
 
   auto target_pose_callback =
     [this](const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg) -> void
