@@ -86,7 +86,7 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   desired_position_ =
     exponential_moving_average(desired_position_, target_position_, params_.filter.target_pose);
   desired_orientation_ =
-    target_orientation_.slerp(params_.filter.target_pose, desired_orientation_);
+    desired_orientation_.slerp(params_.filter.target_pose, target_orientation_);
 
   /*target_pose_ = pinocchio::SE3(target_orientation_.toRotationMatrix(),
    * target_position_);*/
@@ -183,10 +183,11 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   tau_d << tau_task + tau_nullspace + tau_friction + tau_coriolis + tau_gravity + tau_joint_limits +
       tau_wrench;
 
+  tau_d = exponential_moving_average(tau_previous, tau_d, params_.filter.output_torque);
+
   if (params_.limit_torques) {
     tau_d = saturateTorqueRate(tau_d, tau_previous, params_.max_delta_tau);
   }
-  tau_d = exponential_moving_average(tau_d, tau_previous, params_.filter.output_torque);
 
   if (!params_.stop_commands) {
     for (size_t i = 0; i < params_.joints.size(); ++i) {
