@@ -10,13 +10,13 @@
   * @brief Compute the exponential moving average of a value
   * @param output Previous output value
   * @param current Current value measured to be filtered
-   * @param alpha Smoothing factor (0 < alpha < 1). The closer to 1, the more it
+   * @param alpha Smoothing factor (0 < alpha < 1). The closer to 0, the more it
   * smooths the value
   * @return returns the filtered value
   */
 template <typename T>
-inline T exponential_moving_average(const T output, const T current, const double alpha) {
-  return (1.0 - alpha) * current + alpha * output;
+inline T exponential_moving_average(const T prev, const T current, const double alpha) {
+  return (1.0 - alpha) * prev + alpha * current;
 }
 
 /**

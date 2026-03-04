@@ -37,15 +37,10 @@ TwistBroadcaster::state_interface_configuration() const {
 }
 
 controller_interface::return_type
-<<<<<<< HEAD
-TwistBroadcaster::update(const rclcpp::Time &time,
-                         const rclcpp::Duration &period) {
-=======
 TwistBroadcaster::update(const rclcpp::Time & time, const rclcpp::Duration & period) {
   size_t num_joints = params_.joints.size();
   Eigen::VectorXd q_pin = Eigen::VectorXd::Zero(model_.nq);
   Eigen::VectorXd q_dot_pin = Eigen::VectorXd::Zero(model_.nv);
->>>>>>> upstream/main
 
   for (size_t i = 0; i < num_joints; i++) {
     auto joint_name = params_.joints[i];
