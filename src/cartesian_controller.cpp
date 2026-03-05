@@ -321,7 +321,7 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   new_target_wrench_ = false;
 
   multiple_publishers_detected_ = false;
-  max_allowed_publishers_ = 2;
+  max_allowed_publishers_ = 1;
 
   auto target_pose_callback =
     [this](const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg) -> void {
