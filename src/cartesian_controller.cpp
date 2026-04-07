@@ -61,7 +61,7 @@ CartesianController::state_interface_configuration() const {
 }
 
 controller_interface::return_type
-CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & /*period*/) {
+CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & period) {
   
   // Update current state information with EMA filtered values
   updateCurrentState();
@@ -82,6 +82,49 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
 
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
+
+  //
+  // Compute twist
+  //
+
+  double dt = period.seconds();
+
+  Eigen::Vector3d linear_velocity = ((target_position_ - desired_position_)/dt).eval();
+  
+  Eigen::Vector3d angular_velocity;
+  
+  Eigen::Quaterniond q_delta = target_orientation_ * desired_orientation_.inverse();
+  // Ensure shortest path
+  if (q_delta.w() < 0.0) {
+    q_delta.coeffs() *= -1.0;
+  }
+
+  Eigen::AngleAxisd aa(q_delta);
+  if (aa.angle() < 1e-6) {
+    angular_velocity = Eigen::VectorXd::Zero(3);
+  } else {
+    angular_velocity = aa.axis() * aa.angle() / dt;
+  }
+
+// angular_velocity =
+//   pinocchio::log3(
+//     target_orientation_.toRotationMatrix() *
+//     desired_orientation_.toRotationMatrix().transpose()
+//   ) / dt;
+
+  Eigen::Matrix3d R_transpose = end_effector_pose.rotation().transpose();
+  Eigen::VectorXd target_twist = Eigen::VectorXd::Zero(6);
+  if (params_.use_local_jacobian){
+    target_twist.head<3>() = R_transpose * linear_velocity;
+    target_twist.tail<3>() = R_transpose * angular_velocity;
+  }
+
+  desired_twist_ = exponential_moving_average(desired_twist_, target_twist, params_.filter.target_pose);
+
+  // RCLCPP_INFO_STREAM(
+  //     get_node()->get_logger(),
+  //     "twist: " << desired_twist_);
+
 
   desired_position_ =
     exponential_moving_average(desired_position_, target_position_, params_.filter.target_pose);
@@ -143,7 +186,7 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   if (params_.use_operational_space) {
     tau_task << J.transpose() * Mx * (stiffness * error - damping * (J * dq));
   } else {
-    tau_task << J.transpose() * (stiffness * error - damping * (J * dq));
+    tau_task << J.transpose() * (stiffness * error + damping * ( desired_twist_ - J * dq));
   }
 
   if (model_.nq != model_.nv) {
@@ -390,6 +433,7 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   target_orientation_ = Eigen::Quaterniond::Identity();
   target_wrench_ = Eigen::VectorXd::Zero(6);
   desired_position_ = Eigen::Vector3d::Zero();
+  desired_twist_ = Eigen::VectorXd::Zero(6);
   desired_orientation_ = Eigen::Quaterniond::Identity();
 
   // Initialize error vector

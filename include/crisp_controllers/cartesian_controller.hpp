@@ -159,6 +159,8 @@ private:
   /** @brief Desired target orientation as quaternion after applying filtering */
   Eigen::Quaterniond desired_orientation_;
 
+  Eigen::VectorXd desired_twist_;
+
   /** @brief Parameter listener for dynamic parameter updates */
   std::shared_ptr<cartesian_controller::ParamListener> params_listener_;
   /** @brief Current parameter values */
