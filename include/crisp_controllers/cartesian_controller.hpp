@@ -13,6 +13,7 @@
 
 #include <controller_interface/controller_interface.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/multibody/fwd.hpp>
@@ -28,6 +29,7 @@
 
 #include <sensor_msgs/msg/joint_state.hpp>
 #include "realtime_tools/realtime_buffer.hpp"
+
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -98,6 +100,8 @@ public:
 private:
   /** @brief Subscription for target pose messages */
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+  /** @brief Subscription for target twist messages */
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
   /** @brief Subscription for target joint state messages */
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
   /** @brief Subscription for target wrench messages */
@@ -126,6 +130,11 @@ private:
   void parse_target_pose_();
 
   /**
+   * @brief Reads the target twist in realtime loop from the buffer and parses it to be used in the controller.
+   */
+  void parse_target_twist_();
+
+  /**
    * @brief Reads the target joint in realtime loop from the buffer and parses it to be used in the controller.
    */
   void parse_target_joint_();
@@ -136,11 +145,15 @@ private:
   void parse_target_wrench_();
 
   bool new_target_pose_;
+  bool new_target_twist_;
   bool new_target_joint_;
   bool new_target_wrench_;
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::PoseStamped>>
     target_pose_buffer_;
+  
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>>
+    target_twist_buffer_;
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<sensor_msgs::msg::JointState>>
     target_joint_buffer_;
@@ -150,15 +163,20 @@ private:
 
   /** @brief Target position in Cartesian space */
   Eigen::Vector3d target_position_;
+
+  /** @brief Target twist */
+  Eigen::VectorXd target_twist_;
+
   /** @brief Target orientation as quaternion */
   Eigen::Quaterniond target_orientation_;
   /** @brief Target wrench in task space */
   Eigen::VectorXd target_wrench_;
+
   /** @brief Desired target position in Cartesian space after applying filtering */
   Eigen::Vector3d desired_position_;
   /** @brief Desired target orientation as quaternion after applying filtering */
   Eigen::Quaterniond desired_orientation_;
-
+  /** @brief Desired target 6D twist after applying filtering */
   Eigen::VectorXd desired_twist_;
 
   /** @brief Parameter listener for dynamic parameter updates */

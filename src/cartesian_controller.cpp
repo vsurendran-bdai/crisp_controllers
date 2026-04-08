@@ -71,6 +71,10 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
     parse_target_pose_();
     new_target_pose_ = false;
   }
+  if (new_target_twist_) {
+    parse_target_twist_();
+    new_target_twist_ = false;
+  }
   if (new_target_joint_) {
     parse_target_joint_();
     new_target_joint_ = false;
@@ -87,39 +91,39 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   // Compute twist
   //
 
-  double dt = period.seconds();
+//   double dt = period.seconds();
 
-  Eigen::Vector3d linear_velocity = ((target_position_ - desired_position_)/dt).eval();
+//   Eigen::Vector3d linear_velocity = ((target_position_ - desired_position_)/dt).eval();
   
-  Eigen::Vector3d angular_velocity;
+//   Eigen::Vector3d angular_velocity;
   
-  Eigen::Quaterniond q_delta = target_orientation_ * desired_orientation_.inverse();
-  // Ensure shortest path
-  if (q_delta.w() < 0.0) {
-    q_delta.coeffs() *= -1.0;
-  }
+//   Eigen::Quaterniond q_delta = target_orientation_ * desired_orientation_.inverse();
+//   // Ensure shortest path
+//   if (q_delta.w() < 0.0) {
+//     q_delta.coeffs() *= -1.0;
+//   }
 
-  Eigen::AngleAxisd aa(q_delta);
-  if (aa.angle() < 1e-6) {
-    angular_velocity = Eigen::VectorXd::Zero(3);
-  } else {
-    angular_velocity = aa.axis() * aa.angle() / dt;
-  }
+//   Eigen::AngleAxisd aa(q_delta);
+//   if (aa.angle() < 1e-6) {
+//     angular_velocity = Eigen::VectorXd::Zero(3);
+//   } else {
+//     angular_velocity = aa.axis() * aa.angle() / dt;
+//   }
 
-// angular_velocity =
-//   pinocchio::log3(
-//     target_orientation_.toRotationMatrix() *
-//     desired_orientation_.toRotationMatrix().transpose()
-//   ) / dt;
+// // angular_velocity =
+// //   pinocchio::log3(
+// //     target_orientation_.toRotationMatrix() *
+// //     desired_orientation_.toRotationMatrix().transpose()
+// //   ) / dt;
 
-  Eigen::Matrix3d R_transpose = end_effector_pose.rotation().transpose();
-  Eigen::VectorXd target_twist = Eigen::VectorXd::Zero(6);
-  if (params_.use_local_jacobian){
-    target_twist.head<3>() = R_transpose * linear_velocity;
-    target_twist.tail<3>() = R_transpose * angular_velocity;
-  }
+//   Eigen::Matrix3d R_transpose = end_effector_pose.rotation().transpose();
+//   Eigen::VectorXd target_twist = Eigen::VectorXd::Zero(6);
+//   if (params_.use_local_jacobian){
+//     target_twist.head<3>() = R_transpose * linear_velocity;
+//     target_twist.tail<3>() = R_transpose * angular_velocity;
+//   }
 
-  desired_twist_ = exponential_moving_average(desired_twist_, target_twist, params_.filter.target_pose);
+  desired_twist_ = exponential_moving_average(desired_twist_, target_twist_, params_.filter.target_pose);
 
   // RCLCPP_INFO_STREAM(
   //     get_node()->get_logger(),
@@ -184,7 +188,7 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   }
 
   if (params_.use_operational_space) {
-    tau_task << J.transpose() * Mx * (stiffness * error - damping * (J * dq));
+    tau_task << J.transpose() * Mx * (stiffness * error + damping * (desired_twist_ - J * dq));
   } else {
     tau_task << J.transpose() * (stiffness * error + damping * ( desired_twist_ - J * dq));
   }
@@ -360,6 +364,7 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   setStiffnessAndDamping();
 
   new_target_pose_ = false;
+  new_target_twist_ = false;
   new_target_joint_ = false;
   new_target_wrench_ = false;
 
@@ -378,6 +383,20 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
     }
     target_pose_buffer_.writeFromNonRT(msg);
     new_target_pose_ = true;
+  };
+
+  auto target_twist_callback =
+    [this](const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg) -> void {
+    if (!check_topic_publisher_count("target_twist")) {
+      RCLCPP_WARN_THROTTLE(
+        get_node()->get_logger(),
+        *get_node()->get_clock(),
+        1000,
+        "Ignoring target_pose message due to multiple publishers detected!");
+      return;
+    }
+    target_twist_buffer_.writeFromNonRT(msg);
+    new_target_twist_ = true;
   };
 
   auto target_joint_callback =
@@ -411,6 +430,9 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   pose_sub_ = get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
     "target_pose", rclcpp::QoS(1), target_pose_callback);
 
+  twist_sub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
+    "target_twist", rclcpp::QoS(1), target_twist_callback);
+
   joint_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
     "target_joint", rclcpp::QoS(1), target_joint_callback);
 
@@ -430,6 +452,7 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
 
   // Initialize target state vectors
   target_position_ = Eigen::Vector3d::Zero();
+  target_twist_ = Eigen::VectorXd::Zero(6);
   target_orientation_ = Eigen::Quaterniond::Identity();
   target_wrench_ = Eigen::VectorXd::Zero(6);
   desired_position_ = Eigen::Vector3d::Zero();
@@ -580,6 +603,12 @@ void CartesianController::parse_target_pose_() {
     msg->pose.orientation.x,
     msg->pose.orientation.y,
     msg->pose.orientation.z);
+}
+
+void CartesianController::parse_target_twist_() {
+  auto msg = *target_twist_buffer_.readFromRT();
+  target_twist_ << msg->twist.linear.x, msg->twist.linear.y, msg->twist.linear.z,
+                   msg->twist.angular.x, msg->twist.angular.y, msg->twist.angular.z;
 }
 
 void CartesianController::parse_target_joint_() {
