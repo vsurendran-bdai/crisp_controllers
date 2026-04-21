@@ -28,8 +28,8 @@
 #endif
 
 #include <sensor_msgs/msg/joint_state.hpp>
-#include "realtime_tools/realtime_buffer.hpp"
-
+#include <realtime_tools/realtime_buffer.hpp>
+#include <realtime_tools/realtime_publisher.hpp>
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -107,6 +107,30 @@ private:
   /** @brief Subscription for target wrench messages */
   rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_sub_;
 
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr desired_pose_pub_;
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::UniquePtr rt_desired_pose_pub_;
+
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr desired_twist_pub_;
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::TwistStamped>::UniquePtr rt_desired_twist_pub_;
+
+
+  // /** @brief Subscription for target twist messages */
+  // rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
+  // /** @brief Subscription for target joint state messages */
+  // rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
+  // /** @brief Subscription for target wrench messages */
+  // rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_pub_;
+
+  //   /** @brief Subscription for target pose messages */
+  // /** @brief Subscription for target twist messages */
+  // rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
+  // /** @brief Subscription for target joint state messages */
+  // rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
+  // /** @brief Subscription for target wrench messages */
+  // rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_pub_;
+
+
+
   /** @brief Flag to indicate if multiple publishers detected */
   bool multiple_publishers_detected_;
 
@@ -160,6 +184,19 @@ private:
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::WrenchStamped>>
     target_wrench_buffer_;
+
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::PoseStamped>>
+    desired_pose_buffer_;
+  
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>>
+    desired_twist_buffer_;
+
+  realtime_tools::RealtimeBuffer<std::shared_ptr<sensor_msgs::msg::JointState>>
+    desired_joint_buffer_;
+
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::WrenchStamped>>
+    desired_wrench_buffer_;
+
 
   /** @brief Target position in Cartesian space */
   Eigen::Vector3d target_position_;
@@ -296,6 +333,10 @@ private:
    * @return true if publisher count is safe (<=1), false otherwise
    */
   bool check_topic_publisher_count(const std::string & topic_name);
+
+  geometry_msgs::msg::PoseStamped create_pose_stamped_msg(const rclcpp::Time&, const Eigen::Vector3d&, const Eigen::Quaterniond&);
+  geometry_msgs::msg::TwistStamped create_twist_stamped_msg(const rclcpp::Time&, const Eigen::VectorXd&);
+
 };
 
 }  // namespace crisp_controllers

@@ -254,6 +254,12 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
 
   log_debug_info(time);
 
+
+  auto pose_msg = create_pose_stamped_msg(time, desired_position_, desired_orientation_);
+  auto twist_msg = create_twist_stamped_msg(time, desired_twist_);
+  rt_desired_pose_pub_->tryPublish(pose_msg);
+  rt_desired_twist_pub_->tryPublish(twist_msg);
+
   return controller_interface::return_type::OK;
 }
 
@@ -439,6 +445,24 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   wrench_sub_ = get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
     "target_wrench", rclcpp::QoS(1), target_wrench_callback);
 
+
+  desired_pose_pub_ = get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
+    "desired_pose",  rclcpp::SystemDefaultsQoS()
+  );
+  rt_desired_pose_pub_ = 
+    std::make_unique<realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
+        desired_pose_pub_);
+
+  desired_twist_pub_ = get_node()->create_publisher<geometry_msgs::msg::TwistStamped>(
+    "desired_twist",  rclcpp::SystemDefaultsQoS()
+  );
+  rt_desired_twist_pub_ = 
+    std::make_unique<realtime_tools::RealtimePublisher<geometry_msgs::msg::TwistStamped>>(
+        desired_twist_pub_);
+
+
+
+
   // Initialize all control vectors with appropriate dimensions
   tau_task = Eigen::VectorXd::Zero(model_.nv);
   tau_joint_limits = Eigen::VectorXd::Zero(model_.nv);
@@ -610,6 +634,36 @@ void CartesianController::parse_target_twist_() {
   target_twist_ << msg->twist.linear.x, msg->twist.linear.y, msg->twist.linear.z,
                    msg->twist.angular.x, msg->twist.angular.y, msg->twist.angular.z;
 }
+
+
+geometry_msgs::msg::PoseStamped CartesianController::create_pose_stamped_msg(
+    const rclcpp::Time& time, const Eigen::Vector3d& position, const Eigen::Quaterniond& orientation) {
+  geometry_msgs::msg::PoseStamped msg;
+  msg.header.stamp = time;
+  msg.pose.position.x = position.x();
+  msg.pose.position.y = position.y();
+  msg.pose.position.z = position.z();
+  msg.pose.orientation.x = orientation.x();
+  msg.pose.orientation.y = orientation.y();
+  msg.pose.orientation.z = orientation.z();
+  msg.pose.orientation.w = orientation.w();
+  return msg;
+}
+
+
+geometry_msgs::msg::TwistStamped CartesianController::create_twist_stamped_msg(
+    const rclcpp::Time& time, const Eigen::VectorXd& twist) {
+  geometry_msgs::msg::TwistStamped msg;
+  msg.header.stamp = time;
+  msg.twist.linear.x = twist(0);
+  msg.twist.linear.y = twist(1);
+  msg.twist.linear.z = twist(2);
+  msg.twist.angular.x = twist(3);
+  msg.twist.angular.y = twist(4);
+  msg.twist.angular.z = twist(5);
+  return msg;
+}
+
 
 void CartesianController::parse_target_joint_() {
   auto msg = *target_joint_buffer_.readFromRT();
