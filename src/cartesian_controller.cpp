@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 
@@ -82,6 +83,11 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   if (new_target_wrench_) {
     parse_target_wrench_();
     new_target_wrench_ = false;
+  }
+  if (new_target_stiffness_) {
+    parse_target_stiffness_();
+    new_target_stiffness_ = false;
+    setStiffnessAndDamping();
   }
 
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
@@ -249,8 +255,11 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   tau_previous = tau_d;
 
   params_listener_->refresh_dynamic_parameters();
-  params_ = params_listener_->get_params();
-  setStiffnessAndDamping();
+  if (params_listener_->is_old(params_))
+  {
+    params_ = params_listener_->get_params();
+    setStiffnessAndDamping();
+  } 
 
   log_debug_info(time);
 
@@ -367,6 +376,8 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   new_target_twist_ = false;
   new_target_joint_ = false;
   new_target_wrench_ = false;
+  new_target_stiffness_ = false;
+  use_target_stiffness_ = false;
 
   multiple_publishers_detected_ = false;
   max_allowed_publishers_ = 2;
@@ -392,7 +403,7 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
         get_node()->get_logger(),
         *get_node()->get_clock(),
         1000,
-        "Ignoring target_pose message due to multiple publishers detected!");
+        "Ignoring target_twist message due to multiple publishers detected!");
       return;
     }
     target_twist_buffer_.writeFromNonRT(msg);
@@ -427,6 +438,20 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
     new_target_wrench_ = true;
   };
 
+  auto target_stiffness_callback =
+    [this](const std::shared_ptr<std_msgs::msg::Float64MultiArray> msg) -> void {
+    if (!check_topic_publisher_count("target_stiffness")) {
+      RCLCPP_WARN_THROTTLE(
+        get_node()->get_logger(),
+        *get_node()->get_clock(),
+        1000,
+        "Ignoring target_stiffness message due to multiple publishers detected!");
+      return;
+    }
+    target_stiffness_buffer_.writeFromNonRT(msg);
+    new_target_stiffness_ = true;
+  };
+
   pose_sub_ = get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
     "target_pose", rclcpp::QoS(1), target_pose_callback);
 
@@ -439,6 +464,10 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   wrench_sub_ = get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
     "target_wrench", rclcpp::QoS(1), target_wrench_callback);
 
+  stiffness_sub_ = get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+    "target_stiffness", rclcpp::QoS(1), target_stiffness_callback);
+
+    
   // Initialize all control vectors with appropriate dimensions
   tau_task = Eigen::VectorXd::Zero(model_.nv);
   tau_joint_limits = Eigen::VectorXd::Zero(model_.nv);
@@ -499,9 +528,31 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
 }
 
 void CartesianController::setStiffnessAndDamping() {
+  if (use_target_stiffness_) {
+    stiffness = target_stiffness_;
+  }else{
   stiffness.setZero();
   stiffness.diagonal() << params_.task.k_pos_x, params_.task.k_pos_y, params_.task.k_pos_z,
     params_.task.k_rot_x, params_.task.k_rot_y, params_.task.k_rot_z;
+  }
+
+  // Clamp stiffness to [0, max_stiffness]
+  const double max_k_trans = params_.variable_stiffness.max_translational_stiffness;
+  const double max_k_rot = params_.variable_stiffness.max_rotational_stiffness;
+  for (int i = 0; i < 3; ++i) {
+    if (stiffness(i, i) < 0.0 || stiffness(i, i) > max_k_trans) {
+      RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
+        "Translational stiffness[%d]=%.1f out of [0, %.1f], clamping.", i, stiffness(i, i), max_k_trans);
+      stiffness(i, i) = std::clamp(stiffness(i, i), 0.0, max_k_trans);
+    }
+  }
+  for (int i = 3; i < 6; ++i) {
+    if (stiffness(i, i) < 0.0 || stiffness(i, i) > max_k_rot) {
+      RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
+        "Rotational stiffness[%d]=%.1f out of [0, %.1f], clamping.", i, stiffness(i, i), max_k_rot);
+      stiffness(i, i) = std::clamp(stiffness(i, i), 0.0, max_k_rot);
+    }
+  }
 
   damping.setZero();
   // For each axis, use explicit damping if > 0, otherwise compute from stiffness
@@ -631,6 +682,43 @@ void CartesianController::parse_target_wrench_() {
   auto msg = *target_wrench_buffer_.readFromRT();
   target_wrench_ << msg->wrench.force.x, msg->wrench.force.y, msg->wrench.force.z,
     msg->wrench.torque.x, msg->wrench.torque.y, msg->wrench.torque.z;
+}
+
+void CartesianController::parse_target_stiffness_() {
+  auto msg = *target_stiffness_buffer_.readFromRT();
+  if (msg->data.size() != 6) {
+    RCLCPP_WARN_THROTTLE(
+      get_node()->get_logger(),
+      *get_node()->get_clock(),
+      1000,
+      "Variable stiffness message must have exactly 6 elements, got %zu. Ignoring.",
+      msg->data.size());
+    return;
+  }
+  const double max_k_trans = params_.variable_stiffness.max_translational_stiffness;
+  const double max_k_rot = params_.variable_stiffness.max_rotational_stiffness;
+  std::array<double, 6> vals = {msg->data[0], msg->data[1], msg->data[2],
+                                msg->data[3], msg->data[4], msg->data[5]};
+  for (int i = 0; i < 3; ++i) {
+    if (vals[i] < 0.0 || vals[i] > max_k_trans) {
+      RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
+        "Topic stiffness[%d]=%.1f out of [0, %.1f], clamping.", i, vals[i], max_k_trans);
+      vals[i] = std::clamp(vals[i], 0.0, max_k_trans);
+    }
+  }
+  for (int i = 3; i < 6; ++i) {
+    if (vals[i] < 0.0 || vals[i] > max_k_rot) {
+      RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
+        "Topic stiffness[%d]=%.1f out of [0, %.1f], clamping.", i, vals[i], max_k_rot);
+      vals[i] = std::clamp(vals[i], 0.0, max_k_rot);
+    }
+  }
+  target_stiffness_.setZero();
+  target_stiffness_.diagonal() << vals[0], vals[1], vals[2], vals[3], vals[4], vals[5];
+  use_target_stiffness_ = true;
+  RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
+    "Variable stiffness received: [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f]",
+    vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
 }
 
 void CartesianController::log_debug_info(const rclcpp::Time & time) {
