@@ -61,6 +61,7 @@ find_package(Eigen3 REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(generate_parameter_library REQUIRED)
+find_package(std_msgs REQUIRED)
 
 generate_parameter_library(
   cartesian_controller_parameters
@@ -129,6 +130,7 @@ ament_target_dependencies(${PROJECT_NAME}
     pinocchio
     generate_parameter_library
     realtime_tools
+    std_msgs
 )
 
 pluginlib_export_plugin_description_file(
@@ -157,6 +159,7 @@ ament_export_dependencies(
     pinocchio
     realtime_tools
     generate_parameter_library
+    std_msgs
 )
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
