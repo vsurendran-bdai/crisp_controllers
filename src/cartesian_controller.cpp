@@ -87,11 +87,17 @@ CartesianController::update(const rclcpp::Time & time, const rclcpp::Duration & 
   if (new_target_stiffness_) {
     parse_target_stiffness_();
     new_target_stiffness_ = false;
-    setStiffnessAndDamping();
   }
+
 
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
+
+
+  desired_stiffness_ = exponential_moving_average(desired_stiffness_, target_stiffness_, params_.filter.target_stiffness);
+  if ((target_stiffness_ - desired_stiffness_).norm() > 1e-3) {
+    setStiffnessAndDamping();
+  }
 
   //
   // Compute twist
@@ -484,9 +490,11 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
   target_twist_ = Eigen::VectorXd::Zero(6);
   target_orientation_ = Eigen::Quaterniond::Identity();
   target_wrench_ = Eigen::VectorXd::Zero(6);
+  target_stiffness_ = Eigen::Matrix<double, 6, 1>::Zero();
   desired_position_ = Eigen::Vector3d::Zero();
   desired_twist_ = Eigen::VectorXd::Zero(6);
   desired_orientation_ = Eigen::Quaterniond::Identity();
+  desired_stiffness_ = Eigen::Matrix<double, 6, 1>::Zero();
 
   // Initialize error vector
   error = Eigen::VectorXd::Zero(6);
@@ -528,13 +536,19 @@ CartesianController::on_configure(const rclcpp_lifecycle::State & /*previous_sta
 }
 
 void CartesianController::setStiffnessAndDamping() {
-  if (use_target_stiffness_) {
-    stiffness = target_stiffness_;
-  }else{
   stiffness.setZero();
-  stiffness.diagonal() << params_.task.k_pos_x, params_.task.k_pos_y, params_.task.k_pos_z,
-    params_.task.k_rot_x, params_.task.k_rot_y, params_.task.k_rot_z;
+  if (use_target_stiffness_) {
+    stiffness.diagonal() << desired_stiffness_[0], desired_stiffness_[1], desired_stiffness_[2],
+                            desired_stiffness_[3], desired_stiffness_[4], desired_stiffness_[5];
+  }else{
+    stiffness.diagonal() << params_.task.k_pos_x, params_.task.k_pos_y, params_.task.k_pos_z,
+      params_.task.k_rot_x, params_.task.k_rot_y, params_.task.k_rot_z;
   }
+
+  // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1,
+  //   "Set stiffness: [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f]",
+  //   stiffness(0, 0), stiffness(1, 1), stiffness(2, 2),
+  //   stiffness(3, 3), stiffness(4, 4), stiffness(5, 5));
 
   // Clamp stiffness to [0, max_stiffness]
   const double max_k_trans = params_.variable_stiffness.max_translational_stiffness;
@@ -637,6 +651,9 @@ CartesianController::on_activate(const rclcpp_lifecycle::State & /*previous_stat
   desired_position_ = target_position_;
   desired_orientation_ = target_orientation_;
 
+  target_stiffness_ = stiffness.diagonal();
+  desired_stiffness_ = target_stiffness_;
+
   RCLCPP_INFO(get_node()->get_logger(), "Controller activated.");
   return CallbackReturn::SUCCESS;
 }
@@ -713,8 +730,9 @@ void CartesianController::parse_target_stiffness_() {
       vals[i] = std::clamp(vals[i], 0.0, max_k_rot);
     }
   }
-  target_stiffness_.setZero();
-  target_stiffness_.diagonal() << vals[0], vals[1], vals[2], vals[3], vals[4], vals[5];
+
+  target_stiffness_ << vals[0], vals[1], vals[2], vals[3], vals[4], vals[5];
+
   use_target_stiffness_ = true;
   RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 100,
     "Variable stiffness received: [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f]",
