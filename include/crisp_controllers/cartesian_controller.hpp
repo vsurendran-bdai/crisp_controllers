@@ -184,6 +184,10 @@ private:
   Eigen::Quaterniond target_orientation_;
   /** @brief Target wrench in task space */
   Eigen::VectorXd target_wrench_;
+  /** @brief Target stiffness matrix in task space */
+  Eigen::Matrix<double, 6, 1> target_stiffness_;
+
+
 
   /** @brief Desired target position in Cartesian space after applying filtering */
   Eigen::Vector3d desired_position_;
@@ -191,6 +195,9 @@ private:
   Eigen::Quaterniond desired_orientation_;
   /** @brief Desired target 6D twist after applying filtering */
   Eigen::VectorXd desired_twist_;
+  /** @brief Desired target stiffness after applying filtering */
+  Eigen::Matrix<double, 6, 1> desired_stiffness_;
+
 
   /** @brief Parameter listener for dynamic parameter updates */
   std::shared_ptr<cartesian_controller::ParamListener> params_listener_;
@@ -207,7 +214,6 @@ private:
 
   /** @brief Cartesian stiffness matrix (6x6) */
   Eigen::MatrixXd stiffness = Eigen::MatrixXd::Zero(6, 6);
-  Eigen::Matrix<double, 6, 6> target_stiffness_ = Eigen::Matrix<double, 6, 6>::Zero();
   /** @brief Cartesian damping matrix (6x6) */
   Eigen::MatrixXd damping = Eigen::MatrixXd::Zero(6, 6);
 

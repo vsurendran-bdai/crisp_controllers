@@ -265,6 +265,14 @@ cartesian_controller:
       validation:
         bounds<>: [0.1, 1.0]
 
+    target_stiffness:
+      type: double
+      default_value: 0.1
+      description: "Amount of smoothing for the target stiffness when using the EMA. The EMA is applied at each step"
+      validation:
+        bounds<>: [0.001, 1.0]
+
+
     q:
       type: double
       default_value: 0.5
